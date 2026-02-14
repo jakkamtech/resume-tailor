@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import { Document, Packer, Paragraph, TextRun } from "docx";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type CloudMode = "AWS" | "AZURE" | "GCP" | "MAPPING";
 
@@ -76,8 +77,8 @@ export async function POST(req: Request) {
     const cloudMapping: string | null = body.cloudMapping ?? null;
     const wantDocx: boolean = !!body.wantDocx;
 
-    if (!process.env.OPENAI_API_KEY) {
-      return new NextResponse("Missing OPENAI_API_KEY in environment variables.", { status: 500 });
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return new NextResponse("Missing ANTHROPIC_API_KEY in environment variables.", { status: 500 });
     }
     if (!baseResume.trim() || !jobDescription.trim()) {
       return new NextResponse("Base resume and job description are required.", { status: 400 });
@@ -102,24 +103,27 @@ CLOUD STRATEGY:
 ${cloudInstruction}
 `;
 
-    const resp = await openai.responses.create({
-      model: "gpt-4o-mini",
-      input: [
-        { role: "system", content: buildSystemPrompt() },
-        { role: "user", content: userPrompt },
-      ],
+    // ✅ Create client INSIDE handler (avoids build-time crashes)
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const msg = await anthropic.messages.create({
+      model: "claude-3-5-sonnet-latest",
+      max_tokens: 3500,
+      temperature: 0.2,
+      system: buildSystemPrompt(),
+      messages: [{ role: "user", content: userPrompt }],
     });
 
-    const text = (resp as any).output_text || "";
+    const text = msg.content
+      .map((c) => (c.type === "text" ? c.text : ""))
+      .join("")
+      .trim();
 
     const { resume, coverage } = parseBlocks(text);
 
     let docxBase64: string | null = null;
 
     if (wantDocx) {
-      // Margins required:
-      // Top 0", Bottom 0", Left 0.4", Right 0.4"
-      // docx uses TWIPs (1 inch = 1440 twips)
       const doc = new Document({
         sections: [
           {
