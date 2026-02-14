@@ -107,7 +107,7 @@ ${cloudInstruction}
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
     const msg = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-latest",
+      model: "claude-3-5-haiku-20241022",
       max_tokens: 3500,
       temperature: 0.2,
       system: buildSystemPrompt(),
